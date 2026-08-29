@@ -16,21 +16,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Build ACT API stub
+      - name: Prepare pinned ACT reference
+        id: act
         shell: pwsh
-        run: dotnet build .\ci\AdvancedCombatTrackerStub\AdvancedCombatTrackerStub.csproj -c Release
+        run: |
+          $output = @(& .\scripts\prepare-act-reference.ps1)
+          if ($output.Count -ne 1) {
+            throw "Expected the ACT resolver to output exactly one path."
+          }
+          $actPath = [string]$output[0]
+          if (-not (Test-Path -LiteralPath $actPath)) {
+            throw "Resolved ACT path does not exist: $actPath"
+          }
+          "path=$actPath" >> $env:GITHUB_OUTPUT
 
       - name: Build plugin
         shell: pwsh
         run: |
-          $actStub = Join-Path $env:GITHUB_WORKSPACE 'ci\AdvancedCombatTrackerStub\bin\Release\net48\Advanced Combat Tracker.dll'
-          dotnet build .\src\TargetMarkerOverlay\TargetMarkerOverlay.csproj -c Release "-p:ActPath=$actStub"
+          dotnet build .\src\TargetMarkerOverlay\TargetMarkerOverlay.csproj -c Release "-p:ActPath=${{ steps.act.outputs.path }}"
 
       - name: Run core tests
         shell: pwsh
         run: |
-          $actStub = Join-Path $env:GITHUB_WORKSPACE 'ci\AdvancedCombatTrackerStub\bin\Release\net48\Advanced Combat Tracker.dll'
-          dotnet run --project .\tests\CoreTests\CoreTests.csproj -c Release "-p:ActPath=$actStub"
+          dotnet run --project .\tests\CoreTests\CoreTests.csproj -c Release "-p:ActPath=${{ steps.act.outputs.path }}"
 
       - name: Package release assets
         shell: pwsh
