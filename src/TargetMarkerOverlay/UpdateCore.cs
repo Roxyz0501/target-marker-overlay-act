@@ -193,9 +193,13 @@ namespace TargetMarkerOverlay
             try
             {
                 var url = "https://api.github.com/repos/" + UpdateConfiguration.RepositoryOwner + "/" + UpdateConfiguration.RepositoryName + "/releases?per_page=20";
-                var json = await client.GetStringAsync(url).ConfigureAwait(false);
-                token.ThrowIfCancellationRequested();
-                return EvaluateReleaseJson(json, CurrentVersion);
+                using (var response = await client.GetAsync(url, token).ConfigureAwait(false))
+                {
+                    response.EnsureSuccessStatusCode();
+                    var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
+                    return EvaluateReleaseJson(json, CurrentVersion);
+                }
             }
             catch (Exception ex) { return new UpdateCheckResult { IsConfigured = true, Error = ex.Message }; }
         }
@@ -219,8 +223,9 @@ namespace TargetMarkerOverlay
             var root = Path.Combine(Path.GetTempPath(), "TargetMarkerOverlayUpdate", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
             var zip = Path.Combine(root, Path.GetFileName(release.Package.Name));
-            var manifest = await client.GetStringAsync(release.HashManifest.Url).ConfigureAwait(false);
-            var bytes = await client.GetByteArrayAsync(release.Package.Url).ConfigureAwait(false);
+            var manifestBytes = await DownloadBytesAsync(release.HashManifest.Url, token).ConfigureAwait(false);
+            var manifest = Encoding.UTF8.GetString(manifestBytes);
+            var bytes = await DownloadBytesAsync(release.Package.Url, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             File.WriteAllBytes(zip, bytes);
             var expected = UpdateSecurity.FindExpectedHash(manifest, release.Package.Name);
@@ -235,24 +240,15 @@ namespace TargetMarkerOverlay
             return dll;
         }
 
-        public static void LaunchDeferredInstaller(string stagedDll)
+        private async Task<byte[]> DownloadBytesAsync(string url, CancellationToken token)
         {
-            var current = Assembly.GetExecutingAssembly().Location;
-            if (!string.Equals(Path.GetFileName(current), UpdateConfiguration.PluginFileName, StringComparison.OrdinalIgnoreCase) || !File.Exists(stagedDll)) throw new InvalidOperationException("Invalid update paths.");
-            var script = Path.Combine(Path.GetDirectoryName(stagedDll), "install-update.ps1");
-            var content = BuildInstallerScript(stagedDll, current, Process.GetCurrentProcess().Id);
-            File.WriteAllText(script, content, new UTF8Encoding(false));
-            Process.Start(new ProcessStartInfo { FileName = "powershell.exe", Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\"", UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden });
-        }
-
-        public static string BuildInstallerScript(string source, string target, int processId)
-        {
-            if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target) || processId <= 0) throw new ArgumentException("Invalid updater arguments.");
-            Func<string, string> q = value => "'" + value.Replace("'", "''") + "'";
-            return "$ErrorActionPreference='Stop'\r\n" +
-                   "$pidToWait=" + processId + "\r\n" +
-                   "$source=" + q(source) + "\r\n$target=" + q(target) + "\r\n$backup=$target+'.bak'\r\n" +
-                   "try { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue; Copy-Item -LiteralPath $target -Destination $backup -Force; Copy-Item -LiteralPath $source -Destination $target -Force } catch { if (Test-Path -LiteralPath $backup) { Copy-Item -LiteralPath $backup -Destination $target -Force }; exit 1 }\r\n";
+            using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseContentRead, token).ConfigureAwait(false))
+            {
+                response.EnsureSuccessStatusCode();
+                var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+                return bytes;
+            }
         }
 
         public void Dispose() { client.Dispose(); }

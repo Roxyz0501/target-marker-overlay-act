@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace TargetMarkerOverlay
@@ -27,12 +28,15 @@ namespace TargetMarkerOverlay
         private readonly Color transparencyColor = Color.FromArgb(1, 2, 3);
         private readonly MarkerStateTracker tracker;
         private readonly Dictionary<string, Image> jobImages = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
-        private readonly Timer boundsSaveTimer;
+        private readonly System.Threading.Timer boundsSaveTimer;
         private PluginSettings settings;
         private List<MarkerAssignment> rows = new List<MarkerAssignment>();
         private Image markerSprite;
-        private bool initialized;
+        private volatile bool initialized;
         private bool appliedLocked;
+        private volatile bool disposing;
+        private volatile bool boundsCaptureStopped;
+        private int boundsSaveTimerDisposed;
         public event EventHandler BoundsChangedByUser;
 
         [DllImport("user32.dll")]
@@ -65,14 +69,11 @@ namespace TargetMarkerOverlay
             LoadImages();
             UpdateRoundedRegion();
 
-            boundsSaveTimer = new Timer { Interval = 450 };
-            boundsSaveTimer.Tick += (s, e) =>
+            boundsSaveTimer = new System.Threading.Timer(_ =>
             {
-                boundsSaveTimer.Stop();
-                if (!initialized || WindowState != FormWindowState.Normal) return;
-                settings.Left = Left; settings.Top = Top; settings.Width = Width; settings.Height = Height;
+                if (!initialized || disposing || boundsCaptureStopped || Volatile.Read(ref boundsSaveTimerDisposed) != 0) return;
                 BoundsChangedByUser?.Invoke(this, EventArgs.Empty);
-            };
+            }, null, Timeout.Infinite, Timeout.Infinite);
             Move += OnBoundsChanged;
             tracker.StateChanged += OnStateChanged;
         }
@@ -99,9 +100,33 @@ namespace TargetMarkerOverlay
 
         private void OnBoundsChanged(object sender, EventArgs e)
         {
-            if (!initialized || settings.Locked) return;
-            boundsSaveTimer.Stop();
-            boundsSaveTimer.Start();
+            if (!initialized || disposing || boundsCaptureStopped || settings.Locked) return;
+            lock (settings)
+            {
+                settings.Left = Left;
+                settings.Top = Top;
+                settings.Width = Width;
+                settings.Height = Height;
+            }
+            try { boundsSaveTimer.Change(450, Timeout.Infinite); }
+            catch (ObjectDisposedException) { }
+        }
+
+        public void StopPendingBoundsSaveAndCapture()
+        {
+            boundsCaptureStopped = true;
+            StopBoundsSaveTimer(true);
+        }
+
+        private void StopBoundsSaveTimer(bool publishFinalSnapshot)
+        {
+            if (Interlocked.Exchange(ref boundsSaveTimerDisposed, 1) != 0) return;
+            using (var callbackStopped = new ManualResetEvent(false))
+            {
+                if (boundsSaveTimer.Dispose(callbackStopped)) callbackStopped.WaitOne();
+            }
+            if (publishFinalSnapshot && initialized && !disposing)
+                BoundsChangedByUser?.Invoke(this, EventArgs.Empty);
         }
 
         protected override void OnResize(EventArgs e)
@@ -123,8 +148,14 @@ namespace TargetMarkerOverlay
 
         private void OnStateChanged(object sender, EventArgs e)
         {
-            if (IsDisposed) return;
-            if (InvokeRequired) { BeginInvoke(new Action(RefreshRows)); return; }
+            if (IsDisposed || disposing) return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke(new Action(() => { if (!IsDisposed && !disposing) RefreshRows(); })); }
+                catch (ObjectDisposedException) { }
+                catch (InvalidOperationException) { }
+                return;
+            }
             RefreshRows();
         }
 
@@ -132,7 +163,7 @@ namespace TargetMarkerOverlay
         {
             var lockChanged = appliedLocked != newSettings.Locked;
             settings = newSettings;
-            settings.Normalize();
+            lock (settings) settings.Normalize();
             MinimumSize = new Size(settings.ShowCharacterName ? 230 : 108, 100);
             if (restoreBounds)
             {
@@ -439,8 +470,10 @@ namespace TargetMarkerOverlay
         {
             if (disposing)
             {
+                this.disposing = true;
+                boundsCaptureStopped = true;
+                StopBoundsSaveTimer(false);
                 tracker.StateChanged -= OnStateChanged;
-                boundsSaveTimer?.Dispose();
                 foreach (var image in jobImages.Values) image.Dispose();
                 markerSprite?.Dispose();
                 Region?.Dispose();

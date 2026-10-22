@@ -55,7 +55,9 @@ Configの `Language` と設定画面の言語欄で、`en`、`ja`、`zh-CN`、`k
 
 ## 更新機能とGitHub Releases
 
-更新機能はGitHub Releasesの安定版のみを対象とし、draftとprereleaseを除外します。起動時確認は既定でONで、設定画面の「更新」タブから無効化または「今すぐ確認」ができます。ダウンロードと適用は利用者が「更新する」を押した場合だけ行われ、自動更新はしません。
+更新機能はGitHub Releasesの安定版のみを対象とし、draftとprereleaseを除外します。起動時確認は既定でONで、設定画面の「更新」タブから無効化または「今すぐ確認」ができます。「更新を準備」を押すと、更新ZIPをダウンロードして検証済みDLLを一時領域に準備します。自動でDLLを置き換えたり、ACT終了後にインストーラーを残して実行したりはしません。
+
+準備完了時に表示されたDLLを使うには、ACTを終了し、現在のプラグインDLLを別名でバックアップしてから、表示された検証済みDLLで手動置換してください。その後ACTを再起動します。設定タブを閉じただけでは更新されません。
 
 更新元は本プラグイン専用の公開リポジトリ [Roxyz0501/target-marker-overlay-act](https://github.com/Roxyz0501/target-marker-overlay-act) です。認証トークンを使わずGitHub Releases APIから安定版を確認します。
 
@@ -70,15 +72,15 @@ public const string RepositoryName = "target-marker-overlay-act";
 2. Releaseビルド後、次を実行します。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.4.0
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.4.1
 ```
 
-3. GitHubで `v1.4.0` のReleaseを作成し、次の2ファイルを添付します。
+3. GitHubで `v1.4.1` のReleaseを作成し、次の2ファイルを添付します。
 
-   - `TargetMarkerOverlay-v1.4.0.zip`
+   - `TargetMarkerOverlay-v1.4.1.zip`
    - `SHA256SUMS.txt`
 
-ZIP直下には `TargetMarkerOverlay.dll`、`README.md`、`THIRD_PARTY_LICENSES.md` だけを置けます。更新時はHTTPSのGitHub URL、SHA-256、ZIP内パス、想定ファイル、DLLの製品名とバージョンを検証します。検証後は現在のDLLを `.bak` にバックアップし、ACT終了を待つ補助スクリプトが置換します。失敗時はバックアップから復元します。GitHubトークンは使用・埋め込みしません。
+ZIP直下には `TargetMarkerOverlay.dll`、`README.md`、`THIRD_PARTY_LICENSES.md` だけを置けます。更新時はHTTPSのGitHub URL、SHA-256、ZIP内パス、想定ファイル、DLLの製品名とバージョンを検証します。ACTで使用中のDLLはプラグインから置換しません。置換時はACTを終了し、手動でバックアップしてから差し替えてください。GitHubトークンは使用・埋め込みしません。
 
 ### 更新機能のテスト
 
@@ -86,7 +88,7 @@ ZIP直下には `TargetMarkerOverlay.dll`、`README.md`、`THIRD_PARTY_LICENSES.
 dotnet run --project .\tests\CoreTests\CoreTests.csproj -c Release
 ```
 
-OS言語マッピング、英語フォールバック、旧Config互換、SemVer、Releaseレスポンス、GitHub URL許可リスト、SHA-256、正常ZIP、Zip Slip拒否、バックアップ／ロールバック経路を検証します。
+OS言語マッピング、英語フォールバック、旧Config互換、SemVer、Releaseレスポンス、GitHub URL許可リスト、SHA-256、正常ZIP、Zip Slip拒否、設定の60秒周期保存、変更なしの書き込み抑制、保存失敗と終了時flush、処理中の終了待ち、再ロードを検証します。
 
 ## 並び順
 

@@ -13,6 +13,7 @@ namespace TargetMarkerOverlay
         private readonly PluginSettings settings;
         private readonly MarkerStateTracker tracker;
         private bool loading = true;
+        private volatile bool stopped;
         private int hoveredTabIndex = -1;
         private readonly CheckBox enabled = Check("Enabled");
         private readonly CheckBox hideEmpty = Check("HideEmpty");
@@ -63,13 +64,12 @@ namespace TargetMarkerOverlay
                 Dock = DockStyle.Fill,
                 Font = new Font("Yu Gothic UI Semibold", 9f),
                 DrawMode = TabDrawMode.OwnerDrawFixed,
-                ItemSize = new Size(112, 32),
-                SizeMode = TabSizeMode.Fixed,
+                Padding = new Point(18, 6),
             };
             tabs.TabPages.Add(BuildOverlayTab());
             tabs.TabPages.Add(BuildSortTab());
-            tabs.TabPages.Add(BuildSupportTab());
             tabs.TabPages.Add(BuildUpdateTab());
+            tabs.TabPages.Add(BuildSupportTab());
             tabs.DrawItem += DrawTab;
             tabs.MouseMove += (s, e) => UpdateHoveredTab(tabs, e.Location);
             tabs.MouseLeave += (s, e) =>
@@ -212,7 +212,7 @@ namespace TargetMarkerOverlay
 
         private TabPage BuildSupportTab()
         {
-            supportPage = new TabPage { BackColor = Color.FromArgb(251, 248, 241), Padding = new Padding(20), Tag = "Support" };
+            supportPage = new TabPage { BackColor = Color.White, Padding = new Padding(20), Tag = "Support" };
             var card = new TableLayoutPanel
             {
                 BackColor = Color.White,
@@ -234,8 +234,8 @@ namespace TargetMarkerOverlay
                 Tag = "SupportTitle",
                 Dock = DockStyle.Fill,
                 Font = new Font("Yu Gothic UI Semibold", 17f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(139, 82, 20),
-                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.FromArgb(166, 83, 15),
+                TextAlign = ContentAlignment.MiddleLeft,
             };
             supportDescriptionLabel = new Label
             {
@@ -243,7 +243,7 @@ namespace TargetMarkerOverlay
                 Dock = DockStyle.Fill,
                 Font = new Font("Yu Gothic UI", 10f),
                 ForeColor = Color.FromArgb(65, 70, 80),
-                TextAlign = ContentAlignment.MiddleCenter,
+                TextAlign = ContentAlignment.MiddleLeft,
             };
             supportAssuranceLabel = new Label
             {
@@ -256,19 +256,19 @@ namespace TargetMarkerOverlay
             supportButton = new Button
             {
                 Tag = "SupportButton",
-                Anchor = AnchorStyles.None,
-                Size = new Size(310, 46),
+                Anchor = AnchorStyles.Left,
+                Size = new Size(360, 50),
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(222, 137, 35),
+                BackColor = Color.FromArgb(202, 101, 20),
                 ForeColor = Color.White,
                 Font = new Font("Yu Gothic UI Semibold", 11f, FontStyle.Bold),
                 Cursor = Cursors.Hand,
                 UseVisualStyleBackColor = false,
             };
-            supportButton.FlatAppearance.BorderColor = Color.FromArgb(174, 95, 17);
+            supportButton.FlatAppearance.BorderColor = Color.FromArgb(164, 79, 12);
             supportButton.FlatAppearance.BorderSize = 1;
-            supportButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(239, 157, 54);
-            supportButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(194, 109, 25);
+            supportButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(224, 126, 31);
+            supportButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(174, 83, 13);
             var urlLabel = new Label
             {
                 Text = SupportUrl,
@@ -300,7 +300,7 @@ namespace TargetMarkerOverlay
 
         private TabPage BuildUpdateTab()
         {
-            updatePage = new TabPage { BackColor = Color.FromArgb(247, 249, 252), Padding = new Padding(20), Tag = "Update" };
+            updatePage = new TabPage { BackColor = Color.White, Padding = new Padding(20), Tag = "Update" };
             var card = new TableLayoutPanel { BackColor = Color.White, Dock = DockStyle.Top, Height = 390, ColumnCount = 1, RowCount = 8, Padding = new Padding(28, 22, 28, 20) };
             card.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
             card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
@@ -360,19 +360,21 @@ namespace TargetMarkerOverlay
             var support = tabs.TabPages[e.Index] == supportPage;
             var selected = e.Index == tabs.SelectedIndex;
             var hovered = e.Index == hoveredTabIndex;
-            var background = support
-                ? (selected ? Color.FromArgb(222, 137, 35) : hovered ? Color.FromArgb(249, 221, 174) : Color.FromArgb(73, 62, 48))
-                : (selected ? Color.White : hovered ? Color.FromArgb(228, 234, 242) : Color.FromArgb(240, 242, 246));
-            var foreground = support
-                ? (selected ? Color.White : hovered ? Color.FromArgb(111, 61, 13) : Color.FromArgb(255, 204, 117))
-                : Color.FromArgb(45, 58, 77);
+            var background = selected ? Color.White : Color.FromArgb(240, 242, 245);
+            var foreground = Color.FromArgb(42, 53, 69);
+            if (support)
+            {
+                background = selected ? Color.FromArgb(255, 245, 226) : hovered ? Color.FromArgb(255, 238, 207) : Color.FromArgb(250, 231, 197);
+                foreground = selected ? Color.FromArgb(137, 62, 7) : hovered ? Color.FromArgb(157, 72, 8) : Color.FromArgb(174, 84, 13);
+            }
+            else if (hovered && !selected) background = Color.FromArgb(247, 248, 250);
             using (var brush = new SolidBrush(background)) e.Graphics.FillRectangle(brush, e.Bounds);
             TextRenderer.DrawText(e.Graphics, tabs.TabPages[e.Index].Text, tabs.Font, e.Bounds, foreground,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
-            if (selected)
+            if (support && selected)
             {
-                using (var pen = new Pen(support ? Color.FromArgb(174, 95, 17) : Color.FromArgb(174, 137, 67), 2f))
-                    e.Graphics.DrawLine(pen, e.Bounds.Left + 3, e.Bounds.Bottom - 2, e.Bounds.Right - 3, e.Bounds.Bottom - 2);
+                using (var pen = new Pen(Color.FromArgb(213, 137, 32), 2f))
+                    e.Graphics.DrawLine(pen, e.Bounds.Left + 4, e.Bounds.Bottom - 2, e.Bounds.Right - 4, e.Bounds.Bottom - 2);
             }
         }
 
@@ -459,18 +461,22 @@ namespace TargetMarkerOverlay
 
         private void Changed(object sender, EventArgs e)
         {
-            if (loading) return;
-            settings.OverlayEnabled = enabled.Checked;
-            settings.HideWhenEmpty = hideEmpty.Checked;
-            settings.ShowCharacterName = showName.Checked;
-            settings.AnonymousMode = anonymous.Checked;
-            settings.Locked = locked.Checked;
-            settings.OpacityPercent = opacity.Value;
-            settings.BackgroundOpacityPercent = backgroundOpacity.Value;
-            settings.EchoToggleEnabled = echoToggle.Checked;
-            settings.EchoToggleText = echoText.Text.Trim();
-            settings.CheckUpdatesOnStartup = checkUpdatesOnStartup.Checked;
-            settings.SortMode = (SortMode)Math.Max(0, sortMode.SelectedIndex);
+            if (loading || stopped) return;
+            lock (settings)
+            {
+                if (stopped) return;
+                settings.OverlayEnabled = enabled.Checked;
+                settings.HideWhenEmpty = hideEmpty.Checked;
+                settings.ShowCharacterName = showName.Checked;
+                settings.AnonymousMode = anonymous.Checked;
+                settings.Locked = locked.Checked;
+                settings.OpacityPercent = opacity.Value;
+                settings.BackgroundOpacityPercent = backgroundOpacity.Value;
+                settings.EchoToggleEnabled = echoToggle.Checked;
+                settings.EchoToggleText = echoText.Text.Trim();
+                settings.CheckUpdatesOnStartup = checkUpdatesOnStartup.Checked;
+                settings.SortMode = (SortMode)Math.Max(0, sortMode.SelectedIndex);
+            }
             opacityValue.Text = opacity.Value + "%";
             backgroundOpacityValue.Text = backgroundOpacity.Value + "%";
             UpdateEchoHint();
@@ -479,6 +485,7 @@ namespace TargetMarkerOverlay
 
         public void SetOverlayEnabled(bool value)
         {
+            if (stopped) return;
             if (InvokeRequired) { BeginInvoke(new Action<bool>(SetOverlayEnabled), value); return; }
             loading = true;
             enabled.Checked = value;
@@ -492,8 +499,12 @@ namespace TargetMarkerOverlay
 
         private void LanguageChanged(object sender, EventArgs e)
         {
-            if (loading) return;
-            settings.Language = LanguageCode(languageInput.SelectedIndex);
+            if (loading || stopped) return;
+            lock (settings)
+            {
+                if (stopped) return;
+                settings.Language = LanguageCode(languageInput.SelectedIndex);
+            }
             tracker.Language = settings.Language;
             ApplyLanguage();
             RaiseChanged();
@@ -503,7 +514,7 @@ namespace TargetMarkerOverlay
         {
             var previousLoading = loading;
             loading = true;
-            settings.Language = Localization.Normalize(settings.Language);
+            lock (settings) settings.Language = Localization.Normalize(settings.Language);
             ApplyLocalizedText(this);
             var selected = sortMode.Items.Count == 0 ? (int)settings.SortMode : Math.Max(0, sortMode.SelectedIndex);
             sortMode.Items.Clear();
@@ -590,19 +601,34 @@ namespace TargetMarkerOverlay
 
         private void GridChanged(object sender, DataGridViewCellEventArgs e)
         {
-            if (loading || e.RowIndex < 0 || e.ColumnIndex != 1) return;
-            settings.MarkerPriorities = ReadGrid(markerGrid);
-            settings.RolePriorities = ReadGrid(roleGrid);
-            settings.JobPriorities = ReadGrid(jobGrid);
+            if (loading || stopped || e.RowIndex < 0 || e.ColumnIndex != 1) return;
+            lock (settings)
+            {
+                if (stopped) return;
+                settings.MarkerPriorities = ReadGrid(markerGrid);
+                settings.RolePriorities = ReadGrid(roleGrid);
+                settings.JobPriorities = ReadGrid(jobGrid);
+            }
             RaiseChanged();
+        }
+
+        public void StopAcceptingInput()
+        {
+            lock (settings) stopped = true;
         }
 
         private void RaiseChanged() => SettingsChanged?.Invoke(this, EventArgs.Empty);
 
         private void TrackerOnActivity(object sender, string text)
         {
-            if (IsDisposed) return;
-            if (InvokeRequired) { BeginInvoke(new Action(() => activity.Text = DateTime.Now.ToString("HH:mm:ss") + "  " + text)); return; }
+            if (IsDisposed || Disposing) return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke(new Action(() => { if (!IsDisposed && !Disposing) activity.Text = DateTime.Now.ToString("HH:mm:ss") + "  " + text; })); }
+                catch (ObjectDisposedException) { }
+                catch (InvalidOperationException) { }
+                return;
+            }
             activity.Text = DateTime.Now.ToString("HH:mm:ss") + "  " + text;
         }
 

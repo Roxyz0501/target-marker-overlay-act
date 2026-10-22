@@ -12,7 +12,7 @@
     <Description>FFXIV target marker overlay plugin for Advanced Combat Tracker.</Description>
     <Platforms>AnyCPU</Platforms>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
     <ActPath Condition="'$(ActPath)' == ''">C:\Program Files (x86)\Advanced Combat Tracker\Advanced Combat Tracker.exe</ActPath>
   </PropertyGroup>
 
