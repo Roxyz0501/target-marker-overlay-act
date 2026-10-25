@@ -100,6 +100,7 @@ namespace TargetMarkerOverlay
         {
             if (finalSnapshot == null) throw new ArgumentNullException(nameof(finalSnapshot));
             Task pending;
+            TaskCompletionSource<bool> completion;
             lock (sync)
             {
                 if (shutdownTask != null) return shutdownTask;
@@ -107,9 +108,23 @@ namespace TargetMarkerOverlay
                 stopping = true;
                 pending = periodicTask;
                 timer.Change(Timeout.Infinite, Timeout.Infinite);
-                shutdownTask = StopAndFlushCoreAsync(pending, finalSnapshot);
-                return shutdownTask;
+                completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                shutdownTask = completion.Task;
             }
+
+            // Starting the async core while holding sync can synchronously wait for a
+            // timer callback that is itself waiting to enter OnTimer's sync lock.
+            CompleteStopAndFlushAsync(completion, pending, finalSnapshot);
+            return completion.Task;
+        }
+
+        private void CompleteStopAndFlushAsync(TaskCompletionSource<bool> completion, Task pending, byte[] finalSnapshot)
+        {
+            Task.Run(async () =>
+            {
+                try { completion.TrySetResult(await StopAndFlushCoreAsync(pending, finalSnapshot).ConfigureAwait(false)); }
+                catch (Exception ex) { completion.TrySetException(ex); }
+            });
         }
 
         private async Task<bool> StopAndFlushCoreAsync(Task pending, byte[] finalSnapshot)

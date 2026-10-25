@@ -72,12 +72,12 @@ public const string RepositoryName = "target-marker-overlay-act";
 2. Releaseビルド後、次を実行します。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.4.1
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.4.2
 ```
 
-3. GitHubで `v1.4.1` のReleaseを作成し、次の2ファイルを添付します。
+3. GitHubで `v1.4.2` のReleaseを作成し、次の2ファイルを添付します。
 
-   - `TargetMarkerOverlay-v1.4.1.zip`
+   - `TargetMarkerOverlay-v1.4.2.zip`
    - `SHA256SUMS.txt`
 
 ZIP直下には `TargetMarkerOverlay.dll`、`README.md`、`THIRD_PARTY_LICENSES.md` だけを置けます。更新時はHTTPSのGitHub URL、SHA-256、ZIP内パス、想定ファイル、DLLの製品名とバージョンを検証します。ACTで使用中のDLLはプラグインから置換しません。置換時はACTを終了し、手動でバックアップしてから差し替えてください。GitHubトークンは使用・埋め込みしません。

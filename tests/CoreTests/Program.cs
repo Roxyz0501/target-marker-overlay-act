@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -66,6 +67,45 @@ internal static class Program
     {
         var initial = Encoding.UTF8.GetBytes("unchanged");
         Assert(SettingsPersistenceCoordinator.DefaultInterval == TimeSpan.FromSeconds(60), "production persistence interval is exactly 60 seconds");
+
+        var deadlockProbe = new SettingsPersistenceCoordinator(
+            Path.Combine(root, "timer-shutdown-lock.xml"), initial, initial, TimeSpan.FromHours(1),
+            (path, bytes) => Task.FromResult(0));
+        var syncLock = typeof(SettingsPersistenceCoordinator).GetField("sync", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(deadlockProbe);
+        var onTimer = typeof(SettingsPersistenceCoordinator).GetMethod("OnTimer", BindingFlags.Instance | BindingFlags.NonPublic);
+        var callbackStarted = new ManualResetEventSlim(false);
+        var ownerReturned = new ManualResetEventSlim(false);
+        Task<bool> stopFromLock = null;
+        Exception stopThreadError = null;
+        var blockedTimerCallback = new Thread(() =>
+        {
+            callbackStarted.Set();
+            onTimer.Invoke(deadlockProbe, new object[] { null });
+        }) { IsBackground = true };
+        var stopOwner = new Thread(() =>
+        {
+            try
+            {
+                lock (syncLock)
+                {
+                    blockedTimerCallback.Start();
+                    callbackStarted.Wait();
+                    if (!SpinWait.SpinUntil(() => (blockedTimerCallback.ThreadState & ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(2)))
+                        throw new TimeoutException("Timer callback did not reach the coordinator lock.");
+                    stopFromLock = deadlockProbe.StopAndFlushAsync(initial);
+                }
+            }
+            catch (Exception ex) { stopThreadError = ex; }
+            finally { ownerReturned.Set(); }
+        }) { IsBackground = true };
+        stopOwner.Start();
+        Assert(ownerReturned.Wait(TimeSpan.FromSeconds(3)), "shutdown does not wait for a timer callback while holding the state lock");
+        if (stopThreadError != null) throw new Exception("Deadlock probe failed.", stopThreadError);
+        Assert(stopFromLock != null && await stopFromLock.ConfigureAwait(false), "timer callback lock race completes final shutdown flush");
+        blockedTimerCallback.Join(TimeSpan.FromSeconds(1));
+        callbackStarted.Dispose();
+        ownerReturned.Dispose();
+
         var writes = 0;
         var unchanged = new SettingsPersistenceCoordinator(
             Path.Combine(root, "unchanged.xml"), initial, initial, TimeSpan.FromHours(1),
