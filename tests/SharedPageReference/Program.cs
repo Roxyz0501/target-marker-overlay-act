@@ -36,7 +36,7 @@ internal static class PreviewTest
             settings.GetType().GetProperty("Language").SetValue(settings, lang, null);
             using (var reference = (Control)Activator.CreateInstance(asm.GetType("FoodBuffOverlay.SettingsControl"), settings))
             using (var page = new PluginUpdatePage("food-buff-overlay", "1.6.0", true, lang))
-            using (var form = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Location = new Point(-16000,-16000) })
+            using (var form = new UserControl { Size = new Size(720, 440) })
             using (var tabs = new TabControl { Dock = DockStyle.Fill })
             {
                 var original = Field<TabPage>(reference, "updateTab");
@@ -60,10 +60,16 @@ internal static class PreviewTest
                         using(var actual=new Bitmap(page.Width,page.Height))
                         {
                             page.DrawToBitmap(actual,page.ClientRectangle);
+                            if (actual.Width < 300 || actual.Height < 300) throw new Exception("Reference page was not laid out.");
+                            int nonWhite = 0;
                             for (int y=0;y<actual.Height;y++)
                             for (int x=0;x<actual.Width;x++)
+                            {
+                                if (actual.GetPixel(x,y).ToArgb() != Color.White.ToArgb()) nonWhite++;
                                 if(actual.GetPixel(x,y)!=expected.GetPixel(x,y))
                                     throw new Exception("Rendering mismatch: " + lang + " " + state + " " + width + " at " + x + "," + y);
+                            }
+                            if (nonWhite < 200) throw new Exception("Reference image has no visible UI content.");
                             if(width==720 && lang=="ja" && state==UpdatePageState.Available) actual.Save("UpdatePage-ja.png");
                         }
                     }

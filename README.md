@@ -80,12 +80,12 @@ public const string RepositoryName = "target-marker-overlay-act";
 2. Releaseビルド後、次を実行します。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.6.0
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.6.1
 ```
 
-3. テスト成功後に新しい `v1.6.0` タグをpushすると、GitHub Actionsが公式ACT参照でビルド・テストし、次の2ファイルを安定版Releaseへ公開します。既存タグ・配布物は上書きしません。
+3. テスト成功後に新しい `v1.6.1` タグをpushすると、GitHub Actionsが公式ACT参照でビルド・テストし、次の2ファイルを安定版Releaseへ公開します。既存タグ・配布物は上書きしません。
 
-   - `TargetMarkerOverlay-v1.6.0.zip`
+   - `TargetMarkerOverlay-v1.6.1.zip`
    - `SHA256SUMS.txt`
 
 ZIP直下には `TargetMarkerOverlay.dll`、`TargetMarkerOverlay.Updater.exe`、`README.md`、`THIRD_PARTY_LICENSES.md` だけを置けます。更新時は対象リポジトリ・安定版タグ・asset名・HTTPSリダイレクト・SHA-256・ZIP内パス・重複やサイズ上限・DLLとUpdaterのアセンブリ名・会社名・バージョンを検証します。補助アップデータはこの検証済みZIP内のものを使い、既存フォルダーの古いUpdaterには依存しません。SHA-256は配布物の整合性検証であり電子署名ではありません。GitHubトークンは使用・埋め込みしません。
