@@ -9,11 +9,12 @@ using System.Threading.Tasks;
 using System.Xml.Serialization;
 using TargetMarkerOverlay;
 
-internal static class Program
+internal static partial class Program
 {
     private static int count;
     private static void Assert(bool condition, string name) { if (!condition) throw new Exception("FAILED: " + name); count++; Console.WriteLine("PASS " + name); }
 
+    [STAThread]
     private static void Main()
     {
         Assert(Localization.FromUiCulture(new CultureInfo("ja-JP")) == "ja", "OS Japanese mapping");
@@ -50,13 +51,17 @@ internal static class Program
             Assert(UpdateSecurity.FindExpectedHash(hash + "  asset.zip", "asset.zip") == hash, "SHA-256 manifest validation");
             Assert(!string.Equals(new string('0', 64), hash, StringComparison.OrdinalIgnoreCase), "corrupt asset hash mismatch");
             var safeZip = Path.Combine(root, "safe.zip");
-            using (var z = ZipFile.Open(safeZip, ZipArchiveMode.Create)) { var e = z.CreateEntry("TargetMarkerOverlay.dll"); using (var w = new StreamWriter(e.Open())) w.Write("x"); }
-            Assert(UpdateSecurity.ValidateZip(safeZip).Count == 1, "safe ZIP validation");
+            using (var z = ZipFile.Open(safeZip, ZipArchiveMode.Create)) { foreach (var name in new[] { "TargetMarkerOverlay.dll", "TargetMarkerOverlay.Updater.exe" }) { var e = z.CreateEntry(name); using (var w = new StreamWriter(e.Open())) w.Write("x"); } }
+            Assert(UpdateSecurity.ValidateZip(safeZip).Count == 2, "safe ZIP validation with mandatory updater");
             var unsafeZip = Path.Combine(root, "unsafe.zip");
             using (var z = ZipFile.Open(unsafeZip, ZipArchiveMode.Create)) { var e = z.CreateEntry("../evil.dll"); using (var w = new StreamWriter(e.Open())) w.Write("x"); }
             var rejected = false; try { UpdateSecurity.ValidateZip(unsafeZip); } catch (InvalidDataException) { rejected = true; }
             Assert(rejected, "Zip Slip rejection");
-            Assert(Localization.Get("en", "UpdatePrepared", "C:\\staged\\TargetMarkerOverlay.dll").Contains("will not start an installer"), "update completion does not leave a post-ACT installer");
+            Assert(Localization.Get("en", "UpdatePrepared", "target").Contains("automatically"), "explicit update prepares automatic post-ACT installation");
+            RunUpdateTests(root);
+            RunNetworkTests().GetAwaiter().GetResult();
+            RunLiveReleaseTest().GetAwaiter().GetResult();
+            RunUiTests(root);
             RunSettingsPersistenceTests(root).GetAwaiter().GetResult();
         }
         finally { try { Directory.Delete(root, true); } catch { } }

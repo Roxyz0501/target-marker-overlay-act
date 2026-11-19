@@ -55,9 +55,15 @@ Configの `Language` と設定画面の言語欄で、`en`、`ja`、`zh-CN`、`k
 
 ## 更新機能とGitHub Releases
 
-更新機能はGitHub Releasesの安定版のみを対象とし、draftとprereleaseを除外します。起動時確認は既定でONで、設定画面の「更新」タブから無効化または「今すぐ確認」ができます。「更新を準備」を押すと、更新ZIPをダウンロードして検証済みDLLを一時領域に準備します。自動でDLLを置き換えたり、ACT終了後にインストーラーを残して実行したりはしません。
+「更新」タブの「更新する」を押すと、公式Release ZIPとSHA-256をダウンロードして検証し、更新を準備します。準備完了後にACTを終了すると、補助アップデータが登録先DLLをバックアップして自動置換し、終了します。数秒待ってからACTを再起動してください。通常の更新で手動コピーは不要です。作者・インストール済みの現在版・GitHubリンクも更新タブに表示します。
 
-準備完了時に表示されたDLLを使うには、ACTを終了し、現在のプラグインDLLを別名でバックアップしてから、表示された検証済みDLLで手動置換してください。その後ACTを再起動します。設定タブを閉じただけでは更新されません。
+ACTが登録している `pluginFile` を更新先として使います。登録先が不明な場合は更新を中止し、shadow copyの場所へ推測で書き込みません。使用中のDLLは上書きしません。補助アップデータは明示操作時のみ起動し、ACT終了、更新完了、エラー、または24時間の待機期限で終了します。設定タブを閉じるだけでは更新されません。更新先は書き込み可能なローカルフォルダーにしてください。
+
+更新前のDLLは同じフォルダーの `TargetMarkerOverlay.dll.backup-*` に残します。置換失敗時はバックアップから復元します。ディスク故障やアクセス権変更などで復元も失敗した場合は、ACTを終了してからバックアップを戻してください。準備ファイルと診断ログは `%TEMP%\TargetMarkerOverlayUpdate\` にあります。設定ファイルは更新対象に含めません。
+
+更新確認は起動時設定ONまたは「今すぐ確認」の操作時だけです。公式 `releases/latest` へHEADを1回送り、同版ならREST APIは0回です。新しい安定版があれば更新内容をREST APIで1回取得します。APIが403/429でも公式最新タグの判定は保持し、「更新する」でタグ固定ZIPとSHA-256の検証を続行できます。利用制限と一般の通信障害は4言語で区別し、連続リトライや定期ポーリングはしません。
+
+v1.4.2以前から今回の版へ移行する際は、旧版の更新機能に自動置換がないため一度だけACT終了後にDLLを置き換えてください。v1.5.0以降は上記の自動置換を利用できます。
 
 更新元は本プラグイン専用の公開リポジトリ [Roxyz0501/target-marker-overlay-act](https://github.com/Roxyz0501/target-marker-overlay-act) です。認証トークンを使わずGitHub Releases APIから安定版を確認します。
 
@@ -68,19 +74,21 @@ public const string RepositoryName = "target-marker-overlay-act";
 
 ### Release assetの作成
 
-1. `TargetMarkerOverlay.csproj` の `Version` をReleaseタグと同じSemVerへ更新します。
+1. プラグインと `TargetMarkerOverlay.Updater.csproj` の `Version` をReleaseタグと同じSemVerへ更新します。
 2. Releaseビルド後、次を実行します。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.4.2
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.5.0
 ```
 
-3. GitHubで `v1.4.2` のReleaseを作成し、次の2ファイルを添付します。
+3. テスト成功後に新しい `v1.5.0` タグをpushすると、GitHub Actionsが公式ACT参照でビルド・テストし、次の2ファイルを安定版Releaseへ公開します。既存タグ・配布物は上書きしません。
 
-   - `TargetMarkerOverlay-v1.4.2.zip`
+   - `TargetMarkerOverlay-v1.5.0.zip`
    - `SHA256SUMS.txt`
 
-ZIP直下には `TargetMarkerOverlay.dll`、`README.md`、`THIRD_PARTY_LICENSES.md` だけを置けます。更新時はHTTPSのGitHub URL、SHA-256、ZIP内パス、想定ファイル、DLLの製品名とバージョンを検証します。ACTで使用中のDLLはプラグインから置換しません。置換時はACTを終了し、手動でバックアップしてから差し替えてください。GitHubトークンは使用・埋め込みしません。
+ZIP直下には `TargetMarkerOverlay.dll`、`TargetMarkerOverlay.Updater.exe`、`README.md`、`THIRD_PARTY_LICENSES.md` だけを置けます。更新時は対象リポジトリ・安定版タグ・asset名・HTTPSリダイレクト・SHA-256・ZIP内パス・重複やサイズ上限・DLLとUpdaterのアセンブリ名・会社名・バージョンを検証します。補助アップデータはこの検証済みZIP内のものを使い、既存フォルダーの古いUpdaterには依存しません。SHA-256は配布物の整合性検証であり電子署名ではありません。GitHubトークンは使用・埋め込みしません。
+
+共通タブは `src/TargetMarkerOverlay/Shared/PluginTabs.cs` に同一ソースで同梱しています。
 
 ### 更新機能のテスト
 

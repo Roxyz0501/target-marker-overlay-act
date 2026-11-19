@@ -14,7 +14,6 @@ namespace TargetMarkerOverlay
         private readonly MarkerStateTracker tracker;
         private bool loading = true;
         private volatile bool stopped;
-        private int hoveredTabIndex = -1;
         private readonly CheckBox enabled = Check("Enabled");
         private readonly CheckBox hideEmpty = Check("HideEmpty");
         private readonly CheckBox showName = Check("ShowName");
@@ -34,7 +33,7 @@ namespace TargetMarkerOverlay
         private readonly DataGridView roleGrid = Grid();
         private readonly DataGridView jobGrid = Grid();
         private readonly Label activity = new Label { AutoSize = false, Dock = DockStyle.Fill, ForeColor = Color.FromArgb(75, 92, 115), Tag = "ActivityWaiting" };
-        private TabControl tabs;
+        private Roxyz.Act.UI.PluginTabs tabs;
         private TabPage displayPage, sortPage, supportPage, updatePage;
         private Label overlayOpacityLabel, backgroundOpacityLabel, echoTitleLabel, echoTextLabel, sortPrimaryLabel, markerHeader, roleHeader, jobHeader, headerSubtitle;
         private Label supportTitleLabel, supportDescriptionLabel, supportAssuranceLabel, supportStatusLabel;
@@ -59,25 +58,12 @@ namespace TargetMarkerOverlay
             BackColor = Color.FromArgb(244, 247, 251);
             Padding = new Padding(14);
 
-            tabs = new TabControl
-            {
-                Dock = DockStyle.Fill,
-                Font = new Font("Yu Gothic UI Semibold", 9f),
-                DrawMode = TabDrawMode.OwnerDrawFixed,
-                Padding = new Point(18, 6),
-            };
+            BuildSupportTab();
+            tabs = new Roxyz.Act.UI.PluginTabs(supportPage);
             tabs.TabPages.Add(BuildOverlayTab());
             tabs.TabPages.Add(BuildSortTab());
             tabs.TabPages.Add(BuildUpdateTab());
-            tabs.TabPages.Add(BuildSupportTab());
-            tabs.DrawItem += DrawTab;
-            tabs.MouseMove += (s, e) => UpdateHoveredTab(tabs, e.Location);
-            tabs.MouseLeave += (s, e) =>
-            {
-                if (hoveredTabIndex < 0) return;
-                hoveredTabIndex = -1;
-                tabs.Invalidate();
-            };
+            tabs.TabPages.Add(supportPage);
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = BackColor };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -300,8 +286,8 @@ namespace TargetMarkerOverlay
 
         private TabPage BuildUpdateTab()
         {
-            updatePage = new TabPage { BackColor = Color.White, Padding = new Padding(20), Tag = "Update" };
-            var card = new TableLayoutPanel { BackColor = Color.White, Dock = DockStyle.Top, Height = 390, ColumnCount = 1, RowCount = 8, Padding = new Padding(28, 22, 28, 20) };
+            updatePage = new TabPage { BackColor = Color.White, Padding = new Padding(20), Tag = "Update", AutoScroll = true };
+            var card = new TableLayoutPanel { BackColor = Color.White, Dock = DockStyle.Top, Height = 530, MinimumSize = new Size(460, 530), ColumnCount = 1, RowCount = 10, Padding = new Padding(28, 22, 28, 20) };
             card.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
             card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
             card.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
@@ -310,6 +296,8 @@ namespace TargetMarkerOverlay
             card.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             card.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             updateTitleLabel = new Label { Tag = "UpdateTitle", Dock = DockStyle.Fill, Font = new Font("Yu Gothic UI Semibold", 15f, FontStyle.Bold), ForeColor = Color.FromArgb(38, 53, 73), TextAlign = ContentAlignment.MiddleLeft };
             checkUpdatesOnStartup.Dock = DockStyle.Fill;
             updateCurrentLabel = new Label { Dock = DockStyle.Fill, ForeColor = Color.FromArgb(75, 88, 107), TextAlign = ContentAlignment.MiddleLeft };
@@ -332,6 +320,14 @@ namespace TargetMarkerOverlay
             card.Controls.Add(new Label { Tag = "ReleaseNotes", Dock = DockStyle.Fill, Font = new Font("Yu Gothic UI Semibold", 9f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
             card.Controls.Add(updateNotesLabel, 0, 6);
             card.Controls.Add(actions, 0, 7);
+            card.Controls.Add(new Label { Tag = "Author", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 8);
+            var repositoryLink = new LinkLabel { Text = UpdateConfiguration.RepositoryUrl, Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
+            repositoryLink.LinkClicked += (s, e) =>
+            {
+                try { Process.Start(new ProcessStartInfo(UpdateConfiguration.RepositoryUrl) { UseShellExecute = true }); }
+                catch (Exception ex) { ShowUpdateInstallState("LinkFailed", ex.Message, true); }
+            };
+            card.Controls.Add(repositoryLink, 0, 9);
             updatePage.Controls.Add(card);
             return updatePage;
         }
@@ -354,39 +350,6 @@ namespace TargetMarkerOverlay
             }
         }
 
-        private void DrawTab(object sender, DrawItemEventArgs e)
-        {
-            var tabs = (TabControl)sender;
-            var support = tabs.TabPages[e.Index] == supportPage;
-            var selected = e.Index == tabs.SelectedIndex;
-            var hovered = e.Index == hoveredTabIndex;
-            var background = selected ? Color.White : Color.FromArgb(240, 242, 245);
-            var foreground = Color.FromArgb(42, 53, 69);
-            if (support)
-            {
-                background = selected ? Color.FromArgb(255, 245, 226) : hovered ? Color.FromArgb(255, 238, 207) : Color.FromArgb(250, 231, 197);
-                foreground = selected ? Color.FromArgb(137, 62, 7) : hovered ? Color.FromArgb(157, 72, 8) : Color.FromArgb(174, 84, 13);
-            }
-            else if (hovered && !selected) background = Color.FromArgb(247, 248, 250);
-            using (var brush = new SolidBrush(background)) e.Graphics.FillRectangle(brush, e.Bounds);
-            TextRenderer.DrawText(e.Graphics, tabs.TabPages[e.Index].Text, tabs.Font, e.Bounds, foreground,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
-            if (support && selected)
-            {
-                using (var pen = new Pen(Color.FromArgb(213, 137, 32), 2f))
-                    e.Graphics.DrawLine(pen, e.Bounds.Left + 4, e.Bounds.Bottom - 2, e.Bounds.Right - 4, e.Bounds.Bottom - 2);
-            }
-        }
-
-        private void UpdateHoveredTab(TabControl tabs, Point location)
-        {
-            var next = -1;
-            for (var index = 0; index < tabs.TabCount; index++)
-                if (tabs.GetTabRect(index).Contains(location)) { next = index; break; }
-            if (next == hoveredTabIndex) return;
-            hoveredTabIndex = next;
-            tabs.Invalidate();
-        }
 
         private Control BuildHeader()
         {
@@ -516,6 +479,7 @@ namespace TargetMarkerOverlay
             loading = true;
             lock (settings) settings.Language = Localization.Normalize(settings.Language);
             ApplyLocalizedText(this);
+            tabs.SetLanguageFont(settings.Language == "ja" ? "Yu Gothic UI" : settings.Language == "zh-CN" ? "Microsoft YaHei UI" : settings.Language == "ko" ? "Malgun Gothic" : "Segoe UI");
             var selected = sortMode.Items.Count == 0 ? (int)settings.SortMode : Math.Max(0, sortMode.SelectedIndex);
             sortMode.Items.Clear();
             sortMode.Items.AddRange(new object[]
@@ -577,8 +541,9 @@ namespace TargetMarkerOverlay
             updateNowButton.Enabled = result != null && result.UpdateAvailable && result.Release?.Package != null && result.Release.HashManifest != null;
             laterButton.Enabled = result != null && result.UpdateAvailable;
             updateLatestLabel.Text = result?.Release == null ? "" : Localization.Get(settings.Language, "LatestVersion", result.Release.Version);
-            updateNotesLabel.Text = result?.Release?.Notes ?? "";
+            updateNotesLabel.Text = UpdateSecurity.PlainTextNotes(result?.Release?.Notes);
             if (result == null || !result.IsConfigured) updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateRepoMissing");
+            else if (result.RateLimited) updateStatusLabel.Text = Localization.Get(settings.Language, result.UpdateAvailable ? "UpdateRateFallback" : "UpdateRateLimited");
             else if (!string.IsNullOrWhiteSpace(result.Error)) updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateFailed", result.Error);
             else if (result.UpdateAvailable) updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateAvailable", GitHubUpdateService.CurrentVersion, result.Release.Version);
             else updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateNone");
@@ -595,8 +560,9 @@ namespace TargetMarkerOverlay
         {
             updateStatusLabel.Text = Localization.Get(settings.Language, updateInstallKey, updateInstallDetail ?? "");
             updateStatusLabel.ForeColor = updateInstallError ? Color.FromArgb(176, 67, 52) : Color.FromArgb(52, 126, 78);
-            checkNowButton.Enabled = !string.Equals(updateInstallKey, "UpdateDownloading", StringComparison.Ordinal);
+            checkNowButton.Enabled = updateInstallKey != "UpdateDownloading" && updateInstallKey != "UpdatePrepared";
             updateNowButton.Enabled = false;
+            laterButton.Enabled = false;
         }
 
         private void GridChanged(object sender, DataGridViewCellEventArgs e)

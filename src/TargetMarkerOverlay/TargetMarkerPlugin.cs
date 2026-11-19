@@ -1,5 +1,6 @@
 using Advanced_Combat_Tracker;
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -25,6 +26,7 @@ namespace TargetMarkerOverlay
         private int activeLogCallbacks;
         private int updateCheckActive;
         private int updateDownloadActive;
+        private bool updatePrepared;
         private bool stopping;
 
         public void InitPlugin(TabPage pluginScreenSpace, Label pluginStatusText)
@@ -119,6 +121,7 @@ namespace TargetMarkerOverlay
 
         private void StartUpdateCheck(bool userInitiated)
         {
+            if (updatePrepared || Volatile.Read(ref updateDownloadActive) != 0) return;
             if (Interlocked.CompareExchange(ref updateCheckActive, 1, 0) != 0) return;
             if (!StartBackgroundOperation(async token =>
             {
@@ -148,7 +151,20 @@ namespace TargetMarkerOverlay
 
         private void OnInstallUpdateRequested(object sender, EventArgs e)
         {
-            if (IsStopping || availableRelease == null || updateService == null) return;
+            if (IsStopping || updatePrepared || availableRelease == null || updateService == null) return;
+            string registeredPath = null;
+            string originalHash;
+            try
+            {
+                foreach (var plugin in ActGlobals.oFormActMain.ActPlugins)
+                    if (ReferenceEquals(plugin.pluginObj, this)) { registeredPath = plugin.pluginFile?.FullName; break; }
+                registeredPath = UpdateSecurity.NormalizeRegisteredPath(registeredPath);
+                SemVersion installed;
+                if (!SemVersion.TryParse(GitHubUpdateService.CurrentVersion, out installed)) throw new InvalidDataException("Invalid installed version.");
+                UpdateSecurity.ValidateAssembly(registeredPath, "TargetMarkerOverlay", installed);
+                originalHash = UpdateSecurity.ComputeSha256(registeredPath);
+            }
+            catch (Exception ex) { control.ShowUpdateInstallState("UpdatePathFailed", ex.Message, true); return; }
             if (Interlocked.CompareExchange(ref updateDownloadActive, 1, 0) != 0) return;
             var release = availableRelease;
             if (!StartBackgroundOperation(async token =>
@@ -159,9 +175,27 @@ namespace TargetMarkerOverlay
                     try
                     {
                         var staged = await updateService.DownloadAndPrepareAsync(release, token).ConfigureAwait(false);
-                        Ui(() => control.ShowUpdateInstallState("UpdatePrepared", staged));
+                        token.ThrowIfCancellationRequested();
+                        Ui(() =>
+                        {
+                            try
+                            {
+                                if (updatePrepared) return;
+                                if (UpdateSecurity.ComputeSha256(registeredPath) != originalHash) throw new IOException("Registered DLL changed while preparing the update.");
+                                using (var act = Process.GetCurrentProcess())
+                                using (var helper = Process.Start(staged.CreateStartInfo(registeredPath, act.Id, act.StartTime.ToUniversalTime().Ticks, settings.Language)))
+                                {
+                                    if (helper == null) throw new InvalidOperationException("Updater did not start.");
+                                }
+                                updatePrepared = true;
+                                control.ShowUpdateInstallState("UpdatePrepared", registeredPath);
+                                status.Text = "Target Marker Overlay: " + Localization.Get(settings.Language, "UpdatePrepared", registeredPath);
+                            }
+                            catch (Exception ex) { control.ShowUpdateInstallState("UpdateCorrupt", ex.Message, true); }
+                        });
                     }
                     catch (OperationCanceledException) { }
+                    catch (RateLimitException) { Ui(() => control.ShowUpdateInstallState("UpdateRateLimited", null, true)); }
                     catch (Exception ex) { Ui(() => control.ShowUpdateInstallState("UpdateCorrupt", ex.Message, true)); }
                 }
                 finally { Interlocked.Exchange(ref updateDownloadActive, 0); }
@@ -170,7 +204,7 @@ namespace TargetMarkerOverlay
 
         private void OnPostponeUpdateRequested(object sender, EventArgs e)
         {
-            if (IsStopping || availableRelease == null) return;
+            if (IsStopping || updatePrepared || availableRelease == null) return;
             lock (settings) settings.SkippedUpdateVersion = availableRelease.Version.ToString();
             CaptureSettingsSnapshot();
             control.ShowUpdateInstallState("UpdateSkipped");

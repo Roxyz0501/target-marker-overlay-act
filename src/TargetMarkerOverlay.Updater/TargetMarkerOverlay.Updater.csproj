@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>TargetMarkerOverlay.Updater</AssemblyName>
+    <Version>1.5.0</Version>
+    <Authors>Roxyz0501</Authors>
+    <Company>Roxyz0501</Company>
+    <Product>Target Marker Overlay Updater</Product>
+  </PropertyGroup>
+</Project>
