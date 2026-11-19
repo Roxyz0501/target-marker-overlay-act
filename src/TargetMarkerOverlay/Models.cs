@@ -23,6 +23,10 @@ namespace TargetMarkerOverlay
     public sealed class PluginSettings
     {
         public string Language { get; set; }
+        [System.Xml.Serialization.XmlIgnore]
+        public string HostedLanguage { get; set; }
+        [System.Xml.Serialization.XmlIgnore]
+        public string EffectiveLanguage => Localization.Normalize(HostedLanguage ?? Language);
         public bool CheckUpdatesOnStartup { get; set; } = true;
         public string SkippedUpdateVersion { get; set; }
         public string LastUpdateCheckUtc { get; set; }

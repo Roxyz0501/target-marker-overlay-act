@@ -159,11 +159,66 @@ internal static partial class Program
                 control.Size = new System.Drawing.Size(900, 720); control.CreateControl();
                 var tabs = Descendants(control).OfType<TabControl>().Single();
                 Assert(tabs.GetType().FullName == "Roxyz.Act.UI.PluginTabs" && tabs.SizeMode == TabSizeMode.Normal && tabs.Padding == new System.Drawing.Point(18, 6) && tabs.Font.Bold, "shared tab behavior " + language);
-                var update = tabs.TabPages.Cast<TabPage>().Single(p => (string)p.Tag == "Update");
-                Assert(Descendants(update).OfType<LinkLabel>().Any(l => l.Text == UpdateConfiguration.RepositoryUrl) && Descendants(update).Any(c => c.Text == Localization.Get(language, "Author")), "update author and clickable repository " + language);
+                var update = tabs.TabPages.Cast<TabPage>().Single(p => p.GetType().Name == "PluginUpdatePage");
+                var languagePage = tabs.TabPages.Cast<TabPage>().Single(p => p.GetType().Name == "PluginLanguagePage");
+                Assert(Descendants(update).OfType<LinkLabel>().Any(l => l.Text.Contains(UpdateConfiguration.RepositoryName)) && Descendants(update).Any(c => c.Text.Contains("Roxyz0501") && c.Text.Contains(GitHubUpdateService.CurrentVersion)), "update author and clickable repository " + language);
                 Assert(!Localization.Get(language, "HeaderSubtitle").Contains("Roxyz0501"), "header author removed " + language);
                 Assert(Localization.Get(language, "UpdateRateLimited") != "UpdateRateLimited" && Localization.Get(language, "UpdatePathFailed") != "UpdatePathFailed", "localized update errors " + language);
                 tabs.SelectedTab = update;
+                var changed = 0; control.SettingsChanged += (s, e) => changed++;
+                var beforeHosted = PluginSettingsSerializer.Serialize(settings);
+                var entry = new TargetMarkerPlugin();
+                var notification = new Label();
+                typeof(TargetMarkerPlugin).GetField("status", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(entry, notification);
+                typeof(TargetMarkerPlugin).GetField("settings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(entry, settings);
+                typeof(TargetMarkerPlugin).GetField("control", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(entry, control);
+                typeof(TargetMarkerPlugin).GetMethod("SetStatus", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(entry, new object[] { "UpdateAvailable", new object[] { "1.5.0", "1.6.0" } });
+                foreach (var code in new[] { language, language, "en", "ja", "zh-CN", "ko", language, language })
+                {
+                    entry.SetHostedLanguage(code);
+                    Assert(settings.Language == language && settings.EffectiveLanguage == code && tabs.TabPages.Count == 2, "host language override hides shared pages without changing standalone language " + code);
+                    Assert(beforeHosted.SequenceEqual(PluginSettingsSerializer.Serialize(settings)), "host override never enters serialized Config");
+                    Assert(notification.Text.Contains(Localization.Get(code, "UpdateAvailable", "1.5.0", "1.6.0")), "active notification immediately follows hosted language");
+                    entry.SetHostedLanguage(null);
+                    Assert(tabs.TabPages.Count == 5 && settings.EffectiveLanguage == language && tabs.TabPages[4].Tag as string == "Support", "standalone tabs and saved language restored");
+                    control.ApplyLanguage(); control.ApplyLanguage();
+                    foreach (var label in Descendants(update).OfType<Label>())
+                        using (var graphics = label.CreateGraphics()) graphics.MeasureString(label.Text, label.Font);
+                }
+                Assert(changed == 0, "language synchronization does not emit setting changes");
+                var newPage = new TabPage("Dynamic");
+                tabs.GetType().GetMethod("AddContentPage").Invoke(tabs, new object[] { newPage });
+                Assert(tabs.TabPages[tabs.TabCount - 1].Tag as string == "Support", "dynamic content keeps Support rightmost");
+                tabs.TabPages.Remove(newPage); newPage.Dispose();
+                var selector = Descendants(languagePage).OfType<ComboBox>().Single();
+                selector.SelectedIndex = (selector.SelectedIndex + 1) % 4;
+                Assert(changed == 1 && settings.Language != language, "standalone dedicated language selector persists user choice");
+                settings.Language = language; control.ApplyLanguage();
+                var checks = 0; control.CheckForUpdatesRequested += (s, e) => checks++;
+                var checkButton = (Button)update.GetType().GetField("checkNow", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(update);
+                tabs.SelectedTab = update; checkButton.PerformClick();
+                Assert(checks == 1, "common update page check event wired to existing updater");
+                var installs = 0; var postpones = 0;
+                control.InstallUpdateRequested += (s, e) => installs++;
+                control.PostponeUpdateRequested += (s, e) => postpones++;
+                control.ShowUpdateResult(new UpdateCheckResult { IsConfigured = true, UpdateAvailable = true, Release = GitHubUpdateService.FromStableRedirect(UpdateConfiguration.RepositoryUrl + "/releases/tag/v9.0.0") });
+                ((Button)update.GetType().GetField("updateNow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(update)).PerformClick();
+                ((Button)update.GetType().GetField("later", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(update)).PerformClick();
+                Assert(installs == 1 && postpones == 1, "common Install and Later events preserve existing update route");
+                var startup = Descendants(update).OfType<CheckBox>().Single();
+                startup.Checked = !startup.Checked;
+                Assert(settings.CheckUpdatesOnStartup == startup.Checked && changed == 2, "common startup toggle updates persisted setting once");
+                foreach (var width in new[] { 360, 720 })
+                {
+                    control.Width = width; control.ApplyLanguage();
+                    control.ShowUpdateInstallState("UpdateDownloading");
+                    Assert(!checkButton.Enabled, "preparing disables check button at width " + width);
+                    control.ShowUpdateInstallState("UpdatePrepared", "registered.dll");
+                    Assert(!checkButton.Enabled, "prepared disables duplicate update at width " + width);
+                    using (var narrow = new System.Drawing.Bitmap(control.Width, control.Height)) control.DrawToBitmap(narrow, control.ClientRectangle);
+                }
+                control.Width = 900;
+                notification.Dispose();
                 using (var bitmap = new System.Drawing.Bitmap(control.Width, control.Height))
                 {
                     control.DrawToBitmap(bitmap, control.ClientRectangle);

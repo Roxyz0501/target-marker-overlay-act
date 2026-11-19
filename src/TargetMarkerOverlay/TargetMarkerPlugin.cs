@@ -27,6 +27,9 @@ namespace TargetMarkerOverlay
         private int updateCheckActive;
         private int updateDownloadActive;
         private bool updatePrepared;
+        private string hostedLanguage;
+        private string statusKey = "StatusReady";
+        private object[] statusArguments = new object[0];
         private bool stopping;
 
         public void InitPlugin(TabPage pluginScreenSpace, Label pluginStatusText)
@@ -46,10 +49,12 @@ namespace TargetMarkerOverlay
                 lastKnownSettings,
                 errorCallback: ex => Ui(() =>
                 {
-                    if (status != null) status.Text = "Target Marker Overlay: " + Localization.Get(settings?.Language, "SaveError", ex.Message);
+                    if (status != null) status.Text = "Target Marker Overlay: " + Localization.Get(settings?.EffectiveLanguage, "SaveError", ex.Message);
                 }));
-            tracker.Language = settings.Language;
+            settings.HostedLanguage = hostedLanguage;
+            tracker.Language = settings.EffectiveLanguage;
             control = new SettingsControl(settings, tracker);
+            if (hostedLanguage != null) control.SetHostedLanguage(hostedLanguage);
             control.SettingsChanged += OnSettingsChanged;
             control.CheckForUpdatesRequested += OnCheckForUpdatesRequested;
             control.InstallUpdateRequested += OnInstallUpdateRequested;
@@ -62,10 +67,29 @@ namespace TargetMarkerOverlay
             ActGlobals.oFormActMain.OnLogLineRead += OnLogLineRead;
             overlay.Show();
             overlay.ApplySettings(settings, true);
-            status.Text = "Target Marker Overlay: " + Localization.Get(settings.Language, "StatusReady");
+            SetStatus("StatusReady");
             updateService = new GitHubUpdateService();
             if (initializedLanguage) CaptureSettingsSnapshot();
             if (settings.CheckUpdatesOnStartup) StartUpdateCheck(false);
+        }
+
+        public void SetHostedLanguage(string code)
+        {
+            if (IsStopping) return;
+            hostedLanguage = string.IsNullOrWhiteSpace(code) ? null : Localization.Normalize(code);
+            if (settings == null) return;
+            lock (settings) settings.HostedLanguage = hostedLanguage;
+            control?.SetHostedLanguage(hostedLanguage);
+            tracker.Language = settings.EffectiveLanguage;
+            overlay?.ApplySettings(settings);
+            if (status != null)
+                SetStatus(statusKey, statusArguments);
+        }
+
+        private void SetStatus(string key, params object[] arguments)
+        {
+            statusKey = key; statusArguments = arguments;
+            if (status != null) status.Text = "Target Marker Overlay: " + Localization.Get(settings?.EffectiveLanguage, key, arguments);
         }
 
         private void OnLogLineRead(bool isImport, LogLineEventArgs logInfo)
@@ -103,14 +127,14 @@ namespace TargetMarkerOverlay
             overlay?.ApplySettings(settings);
             CaptureSettingsSnapshot();
             if (status != null)
-                status.Text = "Target Marker Overlay: " + Localization.Get(settings.Language, "StatusEcho", settings.OverlayEnabled ? "ON" : "OFF");
+                SetStatus("StatusEcho", settings.OverlayEnabled ? "ON" : "OFF");
         }
 
         private void OnSettingsChanged(object sender, EventArgs e)
         {
             if (IsStopping) return;
             lock (settings) settings.Normalize();
-            tracker.Language = settings.Language;
+            tracker.Language = settings.EffectiveLanguage;
             overlay?.ApplySettings(settings);
             CaptureSettingsSnapshot();
         }
@@ -143,9 +167,9 @@ namespace TargetMarkerOverlay
                 CaptureSettingsSnapshot();
                 control.ShowUpdateResult(result);
                 if (result.UpdateAvailable && result.Release != null && !string.Equals(settings.SkippedUpdateVersion, result.Release.Version.ToString(), StringComparison.OrdinalIgnoreCase))
-                    status.Text = "Target Marker Overlay: " + Localization.Get(settings.Language, "UpdateAvailable", GitHubUpdateService.CurrentVersion, result.Release.Version);
+                    SetStatus("UpdateAvailable", GitHubUpdateService.CurrentVersion, result.Release.Version);
                 else if (userInitiated && !result.IsConfigured)
-                    status.Text = "Target Marker Overlay: " + Localization.Get(settings.Language, "UpdateRepoMissing");
+                    SetStatus("UpdateRepoMissing");
             });
         }
 
@@ -183,13 +207,13 @@ namespace TargetMarkerOverlay
                                 if (updatePrepared) return;
                                 if (UpdateSecurity.ComputeSha256(registeredPath) != originalHash) throw new IOException("Registered DLL changed while preparing the update.");
                                 using (var act = Process.GetCurrentProcess())
-                                using (var helper = Process.Start(staged.CreateStartInfo(registeredPath, act.Id, act.StartTime.ToUniversalTime().Ticks, settings.Language)))
+                                using (var helper = Process.Start(staged.CreateStartInfo(registeredPath, act.Id, act.StartTime.ToUniversalTime().Ticks, settings.EffectiveLanguage)))
                                 {
                                     if (helper == null) throw new InvalidOperationException("Updater did not start.");
                                 }
                                 updatePrepared = true;
                                 control.ShowUpdateInstallState("UpdatePrepared", registeredPath);
-                                status.Text = "Target Marker Overlay: " + Localization.Get(settings.Language, "UpdatePrepared", registeredPath);
+                                SetStatus("UpdatePrepared", registeredPath);
                             }
                             catch (Exception ex) { control.ShowUpdateInstallState("UpdateCorrupt", ex.Message, true); }
                         });
@@ -298,7 +322,7 @@ namespace TargetMarkerOverlay
             }
             catch (Exception ex)
             {
-                if (status != null) status.Text = "Target Marker Overlay: " + Localization.Get(settings?.Language, "SaveError", ex.Message);
+                if (status != null) status.Text = "Target Marker Overlay: " + Localization.Get(settings?.EffectiveLanguage, "SaveError", ex.Message);
             }
             overlay?.Close();
             overlay?.Dispose();
@@ -307,8 +331,8 @@ namespace TargetMarkerOverlay
             logCallbacksDrained.Dispose();
             if (status != null)
                 status.Text = "Target Marker Overlay: " + (saveSucceeded
-                    ? Localization.Get(settings?.Language, "StatusStopped")
-                    : Localization.Get(settings?.Language, "SaveError", settingsPersistence?.LastError?.Message ?? "Unknown error"));
+                    ? Localization.Get(settings?.EffectiveLanguage, "StatusStopped")
+                    : Localization.Get(settings?.EffectiveLanguage, "SaveError", settingsPersistence?.LastError?.Message ?? "Unknown error"));
         }
 
         private PluginSettings LoadSettings()

@@ -49,7 +49,9 @@ echo連動を使う場合は「指定したechoチャットで表示を切り替
 
 ## 言語設定
 
-Configの `Language` と設定画面の言語欄で、`en`、`ja`、`zh-CN`、`ko` を選択できます。変更は設定画面とオーバーレイへ即時反映されます。
+専用の「Language／言語／语言／언어」タブで、`en`、`ja`、`zh-CN`、`ko` を選択できます。変更は設定画面とオーバーレイへ即時反映され、Configの `Language` に保存されます。
+
+Roxyzs ACT Pluginポータル内では、ポータルの言語を一時的に使い、子プラグインの言語・更新・支援タブを隠します。ホストは初期化直後と選択変更時に `SetHostedLanguage(string code)` をUIスレッドから呼び出せます。指定はメモリだけに保持し、単体で選んだ保存言語は変更しません。`null` または空文字で単体表示と保存言語へ戻ります。支援タブは動的に機能タブを追加した場合も右端に表示します。
 
 旧Configなどで `Language` が未設定の場合に限り、初回起動時にWindowsのUIカルチャーを確認します。`ja` 系は日本語、`zh` 系は簡体字中国語、`ko` 系は韓国語、それ以外は英語を選択してConfigへ保存します。保存後はOS言語で上書きしません。未対応言語と不足した翻訳キーのフォールバックは英語です。
 
@@ -78,17 +80,17 @@ public const string RepositoryName = "target-marker-overlay-act";
 2. Releaseビルド後、次を実行します。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.5.0
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.6.0
 ```
 
-3. テスト成功後に新しい `v1.5.0` タグをpushすると、GitHub Actionsが公式ACT参照でビルド・テストし、次の2ファイルを安定版Releaseへ公開します。既存タグ・配布物は上書きしません。
+3. テスト成功後に新しい `v1.6.0` タグをpushすると、GitHub Actionsが公式ACT参照でビルド・テストし、次の2ファイルを安定版Releaseへ公開します。既存タグ・配布物は上書きしません。
 
-   - `TargetMarkerOverlay-v1.5.0.zip`
+   - `TargetMarkerOverlay-v1.6.0.zip`
    - `SHA256SUMS.txt`
 
 ZIP直下には `TargetMarkerOverlay.dll`、`TargetMarkerOverlay.Updater.exe`、`README.md`、`THIRD_PARTY_LICENSES.md` だけを置けます。更新時は対象リポジトリ・安定版タグ・asset名・HTTPSリダイレクト・SHA-256・ZIP内パス・重複やサイズ上限・DLLとUpdaterのアセンブリ名・会社名・バージョンを検証します。補助アップデータはこの検証済みZIP内のものを使い、既存フォルダーの古いUpdaterには依存しません。SHA-256は配布物の整合性検証であり電子署名ではありません。GitHubトークンは使用・埋め込みしません。
 
-共通タブは `src/TargetMarkerOverlay/Shared/PluginTabs.cs` に同一ソースで同梱しています。
+共通タブ・更新ページ・言語ページは `src/TargetMarkerOverlay/Shared/` に正本とバイト単位で同じソースを同梱しています。更新ページのフォントやレイアウトは個別に上書きしません。
 
 ### 更新機能のテスト
 
@@ -97,6 +99,8 @@ dotnet run --project .\tests\CoreTests\CoreTests.csproj -c Release
 ```
 
 OS言語マッピング、英語フォールバック、旧Config互換、SemVer、Releaseレスポンス、GitHub URL許可リスト、SHA-256、正常ZIP、Zip Slip拒否、設定の60秒周期保存、変更なしの書き込み抑制、保存失敗と終了時flush、処理中の終了待ち、再ロードを検証します。
+
+共通ページは4言語の往復、同じ言語の再適用、360/720px幅、ホスト時の非表示、保存言語の復元、動的タブ追加も検証します。`tests/SharedPageReference` はFood Buff Overlay v1.6.0のDLLを第1引数に受け取り、画面を表示せず4言語・2幅・6状態の描画をピクセル比較します。比較対象DLLはこのリポジトリには同梱しません。
 
 ## 並び順
 

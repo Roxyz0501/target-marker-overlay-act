@@ -1,4 +1,5 @@
 using System;
+using Roxyz.Act.UI;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -26,21 +27,19 @@ namespace TargetMarkerOverlay
         private readonly CheckBox echoToggle = Check("EchoToggle");
         private readonly TextBox echoText = new TextBox { Width = 200, MaxLength = 100, Anchor = AnchorStyles.Left };
         private readonly Label echoHint = new Label { AutoSize = true, ForeColor = Color.FromArgb(105, 115, 130), Anchor = AnchorStyles.Left };
-        private readonly ComboBox languageInput = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180, Anchor = AnchorStyles.Left };
-        private readonly CheckBox checkUpdatesOnStartup = Check("CheckStartup");
         private readonly ComboBox sortMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
         private readonly DataGridView markerGrid = Grid();
         private readonly DataGridView roleGrid = Grid();
         private readonly DataGridView jobGrid = Grid();
         private readonly Label activity = new Label { AutoSize = false, Dock = DockStyle.Fill, ForeColor = Color.FromArgb(75, 92, 115), Tag = "ActivityWaiting" };
         private Roxyz.Act.UI.PluginTabs tabs;
-        private TabPage displayPage, sortPage, supportPage, updatePage;
+        private TabPage displayPage, sortPage, supportPage;
+        private PluginUpdatePage updatePage;
+        private PluginLanguagePage languagePage;
         private Label overlayOpacityLabel, backgroundOpacityLabel, echoTitleLabel, echoTextLabel, sortPrimaryLabel, markerHeader, roleHeader, jobHeader, headerSubtitle;
         private Label supportTitleLabel, supportDescriptionLabel, supportAssuranceLabel, supportStatusLabel;
         private Button supportButton, clearButton;
         private Label resizeHint;
-        private Label updateTitleLabel, updateCurrentLabel, updateLatestLabel, updateStatusLabel, updateNotesLabel;
-        private Button checkNowButton, updateNowButton, laterButton;
         private UpdateCheckResult lastUpdateResult;
         private string updateInstallKey, updateInstallDetail;
         private bool updateInstallError;
@@ -63,6 +62,9 @@ namespace TargetMarkerOverlay
             tabs.TabPages.Add(BuildOverlayTab());
             tabs.TabPages.Add(BuildSortTab());
             tabs.TabPages.Add(BuildUpdateTab());
+            languagePage = new PluginLanguagePage(settings.EffectiveLanguage);
+            languagePage.LanguageChanged += LanguageChanged;
+            tabs.TabPages.Add(languagePage);
             tabs.TabPages.Add(supportPage);
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = BackColor };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
@@ -72,8 +74,6 @@ namespace TargetMarkerOverlay
             Controls.Add(root);
             ApplyVisualTheme();
 
-            languageInput.Items.AddRange(new object[] { "English", "日本語", "简体中文", "한국어" });
-            languageInput.SelectedIndex = LanguageIndex(settings.Language);
             enabled.Checked = settings.OverlayEnabled;
             hideEmpty.Checked = settings.HideWhenEmpty;
             showName.Checked = settings.ShowCharacterName;
@@ -85,7 +85,6 @@ namespace TargetMarkerOverlay
             backgroundOpacityValue.Text = settings.BackgroundOpacityPercent + "%";
             echoToggle.Checked = settings.EchoToggleEnabled;
             echoText.Text = settings.EchoToggleText ?? "TargetMarker";
-            checkUpdatesOnStartup.Checked = settings.CheckUpdatesOnStartup;
             UpdateEchoHint();
             FillGrid(markerGrid, new[] { "Attack", "Bind", "Stop", "Shape" }, settings.MarkerPriorities);
             FillGrid(roleGrid, new[] { "Tank", "Healer", "Melee", "Ranged", "Caster", "Other" }, settings.RolePriorities);
@@ -100,8 +99,6 @@ namespace TargetMarkerOverlay
             backgroundOpacity.ValueChanged += Changed;
             echoToggle.CheckedChanged += Changed;
             echoText.TextChanged += Changed;
-            checkUpdatesOnStartup.CheckedChanged += Changed;
-            languageInput.SelectedIndexChanged += LanguageChanged;
             sortMode.SelectedIndexChanged += Changed;
             markerGrid.CellValueChanged += GridChanged;
             roleGrid.CellValueChanged += GridChanged;
@@ -117,8 +114,7 @@ namespace TargetMarkerOverlay
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 16, Padding = new Padding(12), AutoScroll = true };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 235));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            layout.Controls.Add(LocalizedLabel("Language"), 0, 0);
-            layout.Controls.Add(languageInput, 1, 0);
+
             AddWide(layout, enabled, 1);
             AddWide(layout, hideEmpty, 2);
             AddWide(layout, showName, 3);
@@ -153,7 +149,7 @@ namespace TargetMarkerOverlay
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, AutoSize = true };
             clearButton = new Button { AutoSize = true, Tag = "ClearDisplay" };
             StyleButton(clearButton, false);
-            clearButton.Click += (s, e) => tracker.Clear(Localization.Get(settings.Language, "StateCleared"));
+            clearButton.Click += (s, e) => tracker.Clear(Localization.Get(settings.EffectiveLanguage, "StateCleared"));
             buttons.Controls.Add(clearButton);
             layout.Controls.Add(buttons, 0, 11); layout.SetColumnSpan(buttons, 2);
 
@@ -168,6 +164,10 @@ namespace TargetMarkerOverlay
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            // Language selection lives in its dedicated page; remove the old first row.
+            foreach (Control item in layout.Controls) layout.SetRow(item, layout.GetRow(item) - 1);
+            layout.RowStyles.RemoveAt(0);
+            layout.RowCount--;
             displayPage.Controls.Add(layout);
             return displayPage;
         }
@@ -286,50 +286,37 @@ namespace TargetMarkerOverlay
 
         private TabPage BuildUpdateTab()
         {
-            updatePage = new TabPage { BackColor = Color.White, Padding = new Padding(20), Tag = "Update", AutoScroll = true };
-            var card = new TableLayoutPanel { BackColor = Color.White, Dock = DockStyle.Top, Height = 530, MinimumSize = new Size(460, 530), ColumnCount = 1, RowCount = 10, Padding = new Padding(28, 22, 28, 20) };
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-            updateTitleLabel = new Label { Tag = "UpdateTitle", Dock = DockStyle.Fill, Font = new Font("Yu Gothic UI Semibold", 15f, FontStyle.Bold), ForeColor = Color.FromArgb(38, 53, 73), TextAlign = ContentAlignment.MiddleLeft };
-            checkUpdatesOnStartup.Dock = DockStyle.Fill;
-            updateCurrentLabel = new Label { Dock = DockStyle.Fill, ForeColor = Color.FromArgb(75, 88, 107), TextAlign = ContentAlignment.MiddleLeft };
-            updateLatestLabel = new Label { Dock = DockStyle.Fill, ForeColor = Color.FromArgb(75, 88, 107), TextAlign = ContentAlignment.MiddleLeft };
-            updateStatusLabel = new Label { Dock = DockStyle.Fill, ForeColor = Color.FromArgb(58, 83, 112), TextAlign = ContentAlignment.MiddleLeft };
-            updateNotesLabel = new Label { Dock = DockStyle.Fill, ForeColor = Color.FromArgb(72, 78, 89), AutoEllipsis = true };
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            checkNowButton = new Button { Tag = "CheckNow", AutoSize = true }; StyleButton(checkNowButton, false);
-            updateNowButton = new Button { Tag = "UpdateNow", AutoSize = true, Enabled = false }; StyleButton(updateNowButton, true);
-            laterButton = new Button { Tag = "Later", AutoSize = true, Enabled = false }; StyleButton(laterButton, false);
-            checkNowButton.Click += (s, e) => CheckForUpdatesRequested?.Invoke(this, EventArgs.Empty);
-            updateNowButton.Click += (s, e) => InstallUpdateRequested?.Invoke(this, EventArgs.Empty);
-            laterButton.Click += (s, e) => PostponeUpdateRequested?.Invoke(this, EventArgs.Empty);
-            actions.Controls.Add(checkNowButton); actions.Controls.Add(updateNowButton); actions.Controls.Add(laterButton);
-            card.Controls.Add(updateTitleLabel, 0, 0);
-            card.Controls.Add(checkUpdatesOnStartup, 0, 1);
-            card.Controls.Add(updateCurrentLabel, 0, 2);
-            card.Controls.Add(updateLatestLabel, 0, 3);
-            card.Controls.Add(updateStatusLabel, 0, 4);
-            card.Controls.Add(new Label { Tag = "ReleaseNotes", Dock = DockStyle.Fill, Font = new Font("Yu Gothic UI Semibold", 9f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
-            card.Controls.Add(updateNotesLabel, 0, 6);
-            card.Controls.Add(actions, 0, 7);
-            card.Controls.Add(new Label { Tag = "Author", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 8);
-            var repositoryLink = new LinkLabel { Text = UpdateConfiguration.RepositoryUrl, Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
-            repositoryLink.LinkClicked += (s, e) =>
+            updatePage = new PluginUpdatePage(UpdateConfiguration.RepositoryName, GitHubUpdateService.CurrentVersion, settings.CheckUpdatesOnStartup, settings.EffectiveLanguage);
+            updatePage.CheckRequested += (s, e) => { if (!stopped) CheckForUpdatesRequested?.Invoke(this, EventArgs.Empty); };
+            updatePage.InstallRequested += (s, e) => { if (!stopped) InstallUpdateRequested?.Invoke(this, EventArgs.Empty); };
+            updatePage.LaterRequested += (s, e) => { if (!stopped) PostponeUpdateRequested?.Invoke(this, EventArgs.Empty); };
+            updatePage.StartupChanged += (s, e) =>
             {
-                try { Process.Start(new ProcessStartInfo(UpdateConfiguration.RepositoryUrl) { UseShellExecute = true }); }
-                catch (Exception ex) { ShowUpdateInstallState("LinkFailed", ex.Message, true); }
+                if (loading || stopped) return;
+                lock (settings) settings.CheckUpdatesOnStartup = updatePage.CheckOnStartup;
+                RaiseChanged();
             };
-            card.Controls.Add(repositoryLink, 0, 9);
-            updatePage.Controls.Add(card);
             return updatePage;
+        }
+
+        public void SetHostedLanguage(string code)
+        {
+            if (stopped) return;
+            lock (settings) settings.HostedLanguage = string.IsNullOrWhiteSpace(code) ? null : Localization.Normalize(code);
+            if (settings.HostedLanguage != null)
+            {
+                tabs.TabPages.Remove(languagePage);
+                tabs.TabPages.Remove(updatePage);
+                tabs.TabPages.Remove(supportPage);
+            }
+            else
+            {
+                if (!tabs.TabPages.Contains(updatePage)) tabs.AddContentPage(updatePage);
+                if (!tabs.TabPages.Contains(languagePage)) tabs.AddContentPage(languagePage);
+                if (!tabs.TabPages.Contains(supportPage)) tabs.AddContentPage(supportPage);
+            }
+            tracker.Language = settings.EffectiveLanguage;
+            ApplyLanguage();
         }
 
         private void OpenSupportLink(Label status)
@@ -338,15 +325,15 @@ namespace TargetMarkerOverlay
             {
                 var uri = new Uri(SupportUrl, UriKind.Absolute);
                 if (uri.Scheme != Uri.UriSchemeHttps || !string.Equals(uri.Host, "ko-fi.com", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException(Localization.Get(settings.Language, "SafeLinkError"));
+                    throw new InvalidOperationException(Localization.Get(settings.EffectiveLanguage, "SafeLinkError"));
                 Process.Start(new ProcessStartInfo { FileName = uri.AbsoluteUri, UseShellExecute = true });
                 status.ForeColor = Color.FromArgb(52, 126, 78);
-                status.Text = Localization.Get(settings.Language, "LinkOpened");
+                status.Text = Localization.Get(settings.EffectiveLanguage, "LinkOpened");
             }
             catch (Exception ex)
             {
                 status.ForeColor = Color.FromArgb(176, 67, 52);
-                status.Text = Localization.Get(settings.Language, "LinkFailed", ex.Message);
+                status.Text = Localization.Get(settings.EffectiveLanguage, "LinkFailed", ex.Message);
             }
         }
 
@@ -437,7 +424,6 @@ namespace TargetMarkerOverlay
                 settings.BackgroundOpacityPercent = backgroundOpacity.Value;
                 settings.EchoToggleEnabled = echoToggle.Checked;
                 settings.EchoToggleText = echoText.Text.Trim();
-                settings.CheckUpdatesOnStartup = checkUpdatesOnStartup.Checked;
                 settings.SortMode = (SortMode)Math.Max(0, sortMode.SelectedIndex);
             }
             opacityValue.Text = opacity.Value + "%";
@@ -457,18 +443,18 @@ namespace TargetMarkerOverlay
 
         private void UpdateEchoHint()
         {
-            echoHint.Text = Localization.Get(settings.Language, "EchoExample", string.IsNullOrWhiteSpace(echoText.Text) ? "TargetMarker" : echoText.Text.Trim());
+            echoHint.Text = Localization.Get(settings.EffectiveLanguage, "EchoExample", string.IsNullOrWhiteSpace(echoText.Text) ? "TargetMarker" : echoText.Text.Trim());
         }
 
         private void LanguageChanged(object sender, EventArgs e)
         {
-            if (loading || stopped) return;
+            if (loading || stopped || settings.HostedLanguage != null) return;
             lock (settings)
             {
                 if (stopped) return;
-                settings.Language = LanguageCode(languageInput.SelectedIndex);
+                settings.Language = languagePage.LanguageCode;
             }
-            tracker.Language = settings.Language;
+            tracker.Language = settings.EffectiveLanguage;
             ApplyLanguage();
             RaiseChanged();
         }
@@ -479,31 +465,33 @@ namespace TargetMarkerOverlay
             loading = true;
             lock (settings) settings.Language = Localization.Normalize(settings.Language);
             ApplyLocalizedText(this);
-            tabs.SetLanguageFont(settings.Language == "ja" ? "Yu Gothic UI" : settings.Language == "zh-CN" ? "Microsoft YaHei UI" : settings.Language == "ko" ? "Malgun Gothic" : "Segoe UI");
+            tabs.SetLanguageFont(settings.EffectiveLanguage == "ja" ? "Yu Gothic UI" : settings.EffectiveLanguage == "zh-CN" ? "Microsoft YaHei UI" : settings.EffectiveLanguage == "ko" ? "Malgun Gothic" : "Segoe UI");
+            languagePage.SetLanguage(settings.EffectiveLanguage);
+            updatePage.SetLanguage(settings.EffectiveLanguage);
+            updatePage.SetCheckOnStartup(settings.CheckUpdatesOnStartup);
             var selected = sortMode.Items.Count == 0 ? (int)settings.SortMode : Math.Max(0, sortMode.SelectedIndex);
             sortMode.Items.Clear();
             sortMode.Items.AddRange(new object[]
             {
-                Localization.Get(settings.Language, "SortMarker"),
-                Localization.Get(settings.Language, "SortRole"),
-                Localization.Get(settings.Language, "SortJob")
+                Localization.Get(settings.EffectiveLanguage, "SortMarker"),
+                Localization.Get(settings.EffectiveLanguage, "SortRole"),
+                Localization.Get(settings.EffectiveLanguage, "SortJob")
             });
             sortMode.SelectedIndex = Math.Min(selected, sortMode.Items.Count - 1);
-            markerGrid.Columns[0].HeaderText = Localization.Get(settings.Language, "ColumnItem");
-            markerGrid.Columns[1].HeaderText = Localization.Get(settings.Language, "ColumnPriority");
-            roleGrid.Columns[0].HeaderText = Localization.Get(settings.Language, "ColumnItem");
-            roleGrid.Columns[1].HeaderText = Localization.Get(settings.Language, "ColumnPriority");
-            jobGrid.Columns[0].HeaderText = Localization.Get(settings.Language, "ColumnItem");
-            jobGrid.Columns[1].HeaderText = Localization.Get(settings.Language, "ColumnPriority");
+            markerGrid.Columns[0].HeaderText = Localization.Get(settings.EffectiveLanguage, "ColumnItem");
+            markerGrid.Columns[1].HeaderText = Localization.Get(settings.EffectiveLanguage, "ColumnPriority");
+            roleGrid.Columns[0].HeaderText = Localization.Get(settings.EffectiveLanguage, "ColumnItem");
+            roleGrid.Columns[1].HeaderText = Localization.Get(settings.EffectiveLanguage, "ColumnPriority");
+            jobGrid.Columns[0].HeaderText = Localization.Get(settings.EffectiveLanguage, "ColumnItem");
+            jobGrid.Columns[1].HeaderText = Localization.Get(settings.EffectiveLanguage, "ColumnPriority");
             LocalizeGridKeys(markerGrid);
             LocalizeGridKeys(roleGrid);
-            markerHeader.Text = Localization.Get(settings.Language, "LowerFirst", Localization.Get(settings.Language, "MarkerPriority"));
-            roleHeader.Text = Localization.Get(settings.Language, "LowerFirst", Localization.Get(settings.Language, "RolePriority"));
-            jobHeader.Text = Localization.Get(settings.Language, "LowerFirst", Localization.Get(settings.Language, "JobPriority"));
-            updateCurrentLabel.Text = Localization.Get(settings.Language, "CurrentVersion", GitHubUpdateService.CurrentVersion);
+            markerHeader.Text = Localization.Get(settings.EffectiveLanguage, "LowerFirst", Localization.Get(settings.EffectiveLanguage, "MarkerPriority"));
+            roleHeader.Text = Localization.Get(settings.EffectiveLanguage, "LowerFirst", Localization.Get(settings.EffectiveLanguage, "RolePriority"));
+            jobHeader.Text = Localization.Get(settings.EffectiveLanguage, "LowerFirst", Localization.Get(settings.EffectiveLanguage, "JobPriority"));
             if (!string.IsNullOrWhiteSpace(updateInstallKey)) RenderInstallState();
             else if (lastUpdateResult != null) RenderUpdateResult();
-            else updateStatusLabel.Text = Localization.Get(settings.Language, UpdateConfiguration.IsConfigured ? "UpdateChecking" : "UpdateRepoMissing");
+            else updatePage.ShowState(UpdatePageState.Ready, Localization.Get(settings.EffectiveLanguage, "CheckNow"));
             supportStatusLabel.Text = "";
             UpdateEchoHint();
             tabs.Invalidate();
@@ -514,17 +502,17 @@ namespace TargetMarkerOverlay
         {
             foreach (Control control in parent.Controls)
             {
+                if (control is PluginUpdatePage || control is PluginLanguagePage) continue;
                 var key = control.Tag as string;
-                if (!string.IsNullOrWhiteSpace(key)) control.Text = Localization.Get(settings.Language, key);
+                if (!string.IsNullOrWhiteSpace(key)) control.Text = Localization.Get(settings.EffectiveLanguage, key);
                 ApplyLocalizedText(control);
             }
         }
 
         public void ShowUpdateChecking()
         {
-            updateStatusLabel.ForeColor = Color.FromArgb(58, 83, 112);
-            updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateChecking");
-            checkNowButton.Enabled = false; updateNowButton.Enabled = false; laterButton.Enabled = false;
+            updateInstallKey = "UpdateChecking";
+            updatePage.ShowState(UpdatePageState.Checking, Localization.Get(settings.EffectiveLanguage, "UpdateChecking"));
         }
 
         public void ShowUpdateResult(UpdateCheckResult result)
@@ -537,17 +525,18 @@ namespace TargetMarkerOverlay
         private void RenderUpdateResult()
         {
             var result = lastUpdateResult;
-            checkNowButton.Enabled = true;
-            updateNowButton.Enabled = result != null && result.UpdateAvailable && result.Release?.Package != null && result.Release.HashManifest != null;
-            laterButton.Enabled = result != null && result.UpdateAvailable;
-            updateLatestLabel.Text = result?.Release == null ? "" : Localization.Get(settings.Language, "LatestVersion", result.Release.Version);
-            updateNotesLabel.Text = UpdateSecurity.PlainTextNotes(result?.Release?.Notes);
-            if (result == null || !result.IsConfigured) updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateRepoMissing");
-            else if (result.RateLimited) updateStatusLabel.Text = Localization.Get(settings.Language, result.UpdateAvailable ? "UpdateRateFallback" : "UpdateRateLimited");
-            else if (!string.IsNullOrWhiteSpace(result.Error)) updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateFailed", result.Error);
-            else if (result.UpdateAvailable) updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateAvailable", GitHubUpdateService.CurrentVersion, result.Release.Version);
-            else updateStatusLabel.Text = Localization.Get(settings.Language, "UpdateNone");
-            updateStatusLabel.ForeColor = result != null && result.UpdateAvailable ? Color.FromArgb(181, 91, 20) : Color.FromArgb(58, 83, 112);
+            var language = settings.EffectiveLanguage;
+            string message;
+            if (result == null || !result.IsConfigured) message = Localization.Get(language, "UpdateRepoMissing");
+            else if (result.RateLimited) message = Localization.Get(language, result.UpdateAvailable ? "UpdateRateFallback" : "UpdateRateLimited");
+            else if (!string.IsNullOrWhiteSpace(result.Error)) message = Localization.Get(language, "UpdateFailed", result.Error);
+            else if (result.UpdateAvailable) message = Localization.Get(language, "UpdateAvailable", GitHubUpdateService.CurrentVersion, result.Release.Version);
+            else message = Localization.Get(language, "UpdateNone");
+            var available = result?.UpdateAvailable == true && result.Release?.Package != null && result.Release.HashManifest != null;
+            if (available)
+                message = Localization.Get(language, "UpdateAvailable", GitHubUpdateService.CurrentVersion, result.Release.Version) + "\r\n" +
+                    (result.RateLimited || result.Error != null ? message + "\r\n" : "") + UpdateSecurity.PlainTextNotes(result.Release.Notes);
+            updatePage.ShowState(available ? UpdatePageState.Available : UpdatePageState.Ready, message);
         }
 
         public void ShowUpdateInstallState(string key, string detail = null, bool error = false)
@@ -558,11 +547,11 @@ namespace TargetMarkerOverlay
 
         private void RenderInstallState()
         {
-            updateStatusLabel.Text = Localization.Get(settings.Language, updateInstallKey, updateInstallDetail ?? "");
-            updateStatusLabel.ForeColor = updateInstallError ? Color.FromArgb(176, 67, 52) : Color.FromArgb(52, 126, 78);
-            checkNowButton.Enabled = updateInstallKey != "UpdateDownloading" && updateInstallKey != "UpdatePrepared";
-            updateNowButton.Enabled = false;
-            laterButton.Enabled = false;
+            var state = updateInstallKey == "UpdateChecking" ? UpdatePageState.Checking :
+                updateInstallKey == "UpdateDownloading" ? UpdatePageState.Preparing :
+                updateInstallKey == "UpdatePrepared" ? UpdatePageState.Prepared :
+                updateInstallError && lastUpdateResult?.UpdateAvailable == true ? UpdatePageState.PrepareFailed : UpdatePageState.Ready;
+            updatePage.ShowState(state, Localization.Get(settings.EffectiveLanguage, updateInstallKey, updateInstallDetail ?? ""));
         }
 
         private void GridChanged(object sender, DataGridViewCellEventArgs e)
@@ -662,7 +651,7 @@ namespace TargetMarkerOverlay
             foreach (DataGridViewRow row in grid.Rows)
             {
                 var key = Convert.ToString(row.Tag);
-                if (!string.IsNullOrWhiteSpace(key)) row.Cells[0].Value = Localization.Get(settings.Language, key);
+                if (!string.IsNullOrWhiteSpace(key)) row.Cells[0].Value = Localization.Get(settings.EffectiveLanguage, key);
             }
         }
 
@@ -671,6 +660,7 @@ namespace TargetMarkerOverlay
             if (disposing)
             {
                 tracker.Activity -= TrackerOnActivity;
+                languagePage?.Dispose(); updatePage?.Dispose(); supportPage?.Dispose();
             }
             base.Dispose(disposing);
         }

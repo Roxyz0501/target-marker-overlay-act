@@ -255,9 +255,9 @@ namespace TargetMarkerOverlay
                 g.FillPolygon(diamond, new[] { new Point(14, 18), new Point(18, 22), new Point(14, 26), new Point(10, 22) });
             using (var titleFont = new Font("Yu Gothic UI Semibold", Width < 285 ? 8.2f : 9.2f, FontStyle.Bold))
             using (var titleBrush = new SolidBrush(Color.FromArgb(239, 221, 178)))
-                g.DrawString(Width < 180 ? "TM" : Localization.Get(settings.Language, "OverlayTitle"), titleFont, titleBrush, 25, 14);
+                g.DrawString(Width < 180 ? "TM" : Localization.Get(settings.EffectiveLanguage, "OverlayTitle"), titleFont, titleBrush, 25, 14);
 
-            var statusText = settings.Locked ? rows.Count.ToString() : Localization.Get(settings.Language, "Unlocked");
+            var statusText = settings.Locked ? rows.Count.ToString() : Localization.Get(settings.EffectiveLanguage, "Unlocked");
             if (Width >= 300)
             {
                 using (var statusFont = new Font("Segoe UI", 7.2f, settings.Locked ? FontStyle.Bold : FontStyle.Regular))
@@ -277,7 +277,7 @@ namespace TargetMarkerOverlay
             {
                 using (var waitFont = new Font("Yu Gothic UI", 9f))
                 using (var waitBrush = new SolidBrush(Color.FromArgb(155, 168, 178, 193)))
-                    g.DrawString(Localization.Get(settings.Language, "MarkerWaiting"), waitFont, waitBrush, 14, HeaderHeight + 13);
+                    g.DrawString(Localization.Get(settings.EffectiveLanguage, "MarkerWaiting"), waitFont, waitBrush, 14, HeaderHeight + 13);
             }
             DrawResizeGrip(g);
             using (var border = new Pen(BackgroundColor(175, 161, 126, 70)))
@@ -355,11 +355,11 @@ namespace TargetMarkerOverlay
         private string LocalizedMarkerLabel(MarkerInfo marker)
         {
             if (marker.Group == MarkerGroup.Attack || marker.Group == MarkerGroup.Bind || marker.Group == MarkerGroup.Stop)
-                return Localization.Get(settings.Language, marker.Group.ToString()).ToUpperInvariant() + " " + marker.Number;
+                return Localization.Get(settings.EffectiveLanguage, marker.Group.ToString()).ToUpperInvariant() + " " + marker.Number;
             if (marker.Group == MarkerGroup.Shape)
             {
                 var key = marker.Code == 10 ? "Square" : marker.Code == 11 ? "Circle" : marker.Code == 12 ? "Plus" : "Triangle";
-                return Localization.Get(settings.Language, key).ToUpperInvariant();
+                return Localization.Get(settings.EffectiveLanguage, key).ToUpperInvariant();
             }
             return marker.Label;
         }
